@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat</title>
+    <style>
+        .message { margin-bottom: 10px; }
+        .user-list { margin-top: 10px; }
+    </style>
+</head>
+<body>
+<div id="enterChat" style="display:block;">
+    <input type="text" id="nameInput" placeholder="Ваше имя">
+    <input type="color" id="colorInput" value="#000000">
+    <button onclick="registerUser()">Войти</button>
+</div>
+<div id="chat" style="display:none;">
+    <input type="text" id="messageInput" placeholder="Сообщение">
+    <button onclick="sendMessage()">Отправить</button>
+    <select id="recipientSelect">
+        <option value="">Всем</option>
+    </select>
+    <div id="messages"></div>
+</div>
+<script>
+    const ws = new WebSocket('ws://localhost:8080');
+    let userName = '';
+    let userColor = '#000000';
+
+    ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        switch (data.type) {
+            case 'message':
+            case 'privateMessage':
+                addMessage(data.name, data.message, data.color, data.recipientName);
+                break;
+            case 'welcome':
+                document.getElementById('chat').style.display = 'block';
+                document.getElementById('enterChat').style.display = 'none';
+                const welcomeMessage = data.message === "Вы первый в чате." ? data.message : "Добро пожаловать. В чате уже присутствуют: " + data.users.join(', ') + ".";
+                addMessage("Система", welcomeMessage, "#000000");
+                updateUsersList(data.users);
+                break;
+            case 'userUpdate':
+            case 'userLeft':
+                updateUsersList(data.users); // Обновляем список пользователей
+                if (data.type === 'userLeft') {
+                    addMessage("Система", `${data.name} нас покинул.`, "#000000");
+                }
+                if (data.type === 'userUpdate') {
+                    addMessage("Система", `${data.name} присоединился.`, "#000000");
+                }
+                break;
+        }
+    };
+
+    function addMessage(sender, message, color, recipientName = "") {
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('message');
+        msgDiv.style.color = color;
+        const toText = recipientName ? ` (ЛС к ${recipientName})` : "";
+        msgDiv.textContent = `${sender}${toText}: ${message}`;
+        document.getElementById('messages').appendChild(msgDiv);
+    }
+
+    function updateUsersList(users) {
+        const select = document.getElementById('recipientSelect');
+        select.innerHTML = '<option value="">Всем</option>'; // Сброс текущего списка
+        users.forEach(user => {
+            if (user !== userName) { // Исключаем себя из списка
+                const option = document.createElement('option');
+                option.value = user;
+                option.textContent = user;
+                select.appendChild(option);
+            }
+        });
+    }
+
+    function registerUser() {
+        userName = document.getElementById('nameInput').value;
+        userColor = document.getElementById('colorInput').value;
+        ws.send(JSON.stringify({ type: 'newUser', name: userName, color: userColor }));
+    }
+
+    function sendMessage() {
+        const message = document.getElementById('messageInput').value;
+        const recipient = document.getElementById('recipientSelect').value;
+        const type = recipient ? 'privateMessage' : 'message';
+        ws.send(JSON.stringify({ type: type, message: message, recipientName: recipient, senderName: userName }));
+        document.getElementById('messageInput').value = '';
+        // Для личных сообщений не добавляем в чат отправителя
+        if (!recipient) {
+            addMessage("Вы", message, userColor);
+        }
+    }
+</script>
+</body>
+</html>
